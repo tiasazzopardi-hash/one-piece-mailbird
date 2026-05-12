@@ -53,7 +53,7 @@ def normalize(text):
     text = re.sub(r'[^a-z0-9_-]', '', text)
     return text
 
-# ---------- MEMBER FINDER ----------
+# ---------- FIND MEMBER ----------
 def find_member(guild, query):
     query = normalize(query)
 
@@ -106,7 +106,7 @@ def format_stats(member, title="Unknown", ability="None"):
 """
 
 # =========================================================
-# STATS COMMAND
+# STATS
 # =========================================================
 @bot.command()
 async def stats(ctx, *, username):
@@ -147,7 +147,7 @@ async def slash_stats(interaction, username: str):
     )
 
 # =========================================================
-# POSTER COMMAND (RENAMED)
+# POSTER COMMAND
 # =========================================================
 @tree.command(name="poster", description="Update bounty poster")
 async def poster(interaction, username: str, picture: discord.Attachment):
@@ -170,7 +170,7 @@ async def poster(interaction, username: str, picture: discord.Attachment):
     await interaction.response.send_message("📦 Poster updated.")
 
 # =========================================================
-# TITLE COMMAND
+# TITLE
 # =========================================================
 @tree.command(name="settitle", description="Set pirate title")
 async def set_title(interaction, username: str, title: str):
@@ -186,12 +186,10 @@ async def set_title(interaction, username: str, title: str):
 
     titles[member.name] = title
 
-    await interaction.response.send_message(
-        f"🎖️ Title set: {title}"
-    )
+    await interaction.response.send_message(f"🎖️ Title set: {title}")
 
 # =========================================================
-# ABILITY COMMAND
+# ABILITY
 # =========================================================
 @tree.command(name="setability", description="Set pirate ability")
 async def set_ability(interaction, username: str, ability: str):
@@ -207,8 +205,48 @@ async def set_ability(interaction, username: str, ability: str):
 
     abilities[member.name] = ability
 
+    await interaction.response.send_message(f"⚔️ Ability set: {ability}")
+
+# =========================================================
+# RESET TITLE
+# =========================================================
+@tree.command(name="resettitle", description="Reset pirate title")
+async def reset_title(interaction, username: str):
+
+    if interaction.user.name.lower() not in AUTHORIZED_USERS:
+        await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
+        return
+
+    member = find_member(interaction.guild, username)
+    if not member:
+        await interaction.response.send_message("❌ Not found.", ephemeral=True)
+        return
+
+    titles[member.name] = "Unknown"
+
     await interaction.response.send_message(
-        f"⚔️ Ability set: {ability}"
+        f"🧹 Title reset for **{member.display_name}**"
+    )
+
+# =========================================================
+# RESET ABILITY
+# =========================================================
+@tree.command(name="resetability", description="Reset pirate ability")
+async def reset_ability(interaction, username: str):
+
+    if interaction.user.name.lower() not in AUTHORIZED_USERS:
+        await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
+        return
+
+    member = find_member(interaction.guild, username)
+    if not member:
+        await interaction.response.send_message("❌ Not found.", ephemeral=True)
+        return
+
+    abilities[member.name] = "None"
+
+    await interaction.response.send_message(
+        f"🧹 Ability reset for **{member.display_name}**"
     )
 
 # =========================================================
