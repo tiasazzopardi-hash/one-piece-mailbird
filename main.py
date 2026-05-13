@@ -19,14 +19,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
-# =========================================================
-# BOT
-# =========================================================
-bot = commands.Bot(
-    command_prefix="!",
-    intents=intents
-)
-
+bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 
 # =========================================================
@@ -36,7 +29,7 @@ POSTER_FOLDER = "bounty_posters"
 DEFAULT_LOST_POSTER = "bounty_posters/lost.png"
 
 # =========================================================
-# AUTHORIZED USERS (ADMINS)
+# ADMINS
 # =========================================================
 AUTHORIZED_USERS = [
     "king_matti_123",
@@ -61,29 +54,12 @@ last_notified = {}
 # TRACKED SERIES
 # =========================================================
 series_status = {
-    "One Piece (Sub) - Crunchyroll": {
-        "episode": 1100,
-        "released": True
-    },
-    "One Piece (Dub) - Anime Dub": {
-        "episode": 1080,
-        "released": True
-    },
-    "One Piece Remake (Sub) - Crunchyroll": {
-        "episode": 0,
-        "released": False
-    },
-    "One Piece Remake (Dub) - Anime Dub": {
-        "episode": 0,
-        "released": False
-    },
-    "One Piece LEGO - Netflix": {
-        "released": False,
-        "release_date": "September 29th"
-    },
-    "One Piece Live Action - Netflix": {
-        "released": True
-    }
+    "One Piece (Sub) - Crunchyroll": {"episode": 1100, "released": True},
+    "One Piece (Dub) - Anime Dub": {"episode": 1080, "released": True},
+    "One Piece Remake (Sub) - Crunchyroll": {"episode": 0, "released": False},
+    "One Piece Remake (Dub) - Anime Dub": {"episode": 0, "released": False},
+    "One Piece LEGO - Netflix": {"released": False, "release_date": "September 29th"},
+    "One Piece Live Action - Netflix": {"released": True}
 }
 
 # =========================================================
@@ -101,67 +77,64 @@ def normalize(text):
 def find_member(guild, query):
     query = normalize(query)
 
-    for member in guild.members:
-        if normalize(member.name) == query or normalize(member.display_name) == query:
-            return member
+    for m in guild.members:
+        if normalize(m.name) == query or normalize(m.display_name) == query:
+            return m
 
-    for member in guild.members:
-        if normalize(member.name).startswith(query) or normalize(member.display_name).startswith(query):
-            return member
+    for m in guild.members:
+        if normalize(m.name).startswith(query) or normalize(m.display_name).startswith(query):
+            return m
 
-    for member in guild.members:
-        if query in normalize(member.name) or query in normalize(member.display_name):
-            return member
+    for m in guild.members:
+        if query in normalize(m.name) or query in normalize(m.display_name):
+            return m
 
     return None
 
 # =========================================================
-# POSTER PATH
+# POSTER
 # =========================================================
 def get_poster_path(username):
     base = normalize(username)
-    extensions = ["png", "jpg", "jpeg", "webp"]
-
-    for ext in extensions:
+    for ext in ["png", "jpg", "jpeg", "webp"]:
         path = os.path.join(POSTER_FOLDER, f"{base}.{ext}")
         if os.path.exists(path):
             return path
-
     return None
 
 # =========================================================
-# FORMAT TIME
+# TIME FORMAT
 # =========================================================
 def format_duration(delta):
     days = delta.days
-    years = days // 365
-    months = (days % 365) // 30
-    remaining_days = days % 30
-
-    return f"{years}y {months}m {remaining_days}d"
+    return f"{days//365}y {(days%365)//30}m {days%30}d"
 
 # =========================================================
-# FORMAT STATS
+# STATS
 # =========================================================
-def format_stats(member, title="Unknown", rank="Unranked", abilities_text="None"):
+def format_stats(member, title="Unknown", rank="Unranked", abilities="None"):
+
     role = member.top_role.name
     now = datetime.now(timezone.utc)
 
-    crew_duration = format_duration(now - member.joined_at) if member.joined_at else "Unknown Seas"
-    pirate_duration = format_duration(now - member.created_at)
+    crew = "Unknown Seas"
+    if member.joined_at:
+        crew = format_duration(now - member.joined_at)
+
+    pirate = format_duration(now - member.created_at)
 
     return f"""
 🏴‍☠️ **Pirate:** {member.display_name}
 🎖️ **Title:** {title}
 🏆 **Rank:** {rank}
 🎭 **Role:** {role}
-⚔️ **Abilities:** {abilities_text}
-⚓ **Time in Crew:** {crew_duration}
-🌊 **Time as Pirate:** {pirate_duration}
+⚔️ **Abilities:** {abilities}
+⚓ **Time in Crew:** {crew}
+🌊 **Time as Pirate:** {pirate}
 """
 
 # =========================================================
-# PREFIX STATS
+# STATS COMMANDS
 # =========================================================
 @bot.command()
 async def stats(ctx, *, username):
@@ -180,12 +153,9 @@ async def stats(ctx, *, username):
             ranks.get(member.name, "Unranked"),
             abilities.get(member.name, "None")
         ),
-        file=(discord.File(poster) if poster else None)
+        file=discord.File(poster) if poster else None
     )
 
-# =========================================================
-# SLASH STATS
-# =========================================================
 @tree.command(name="stats", description="Check pirate stats")
 async def slash_stats(interaction, username: str):
     member = find_member(interaction.guild, username)
@@ -203,7 +173,7 @@ async def slash_stats(interaction, username: str):
             ranks.get(member.name, "Unranked"),
             abilities.get(member.name, "None")
         ),
-        file=(discord.File(poster) if poster else None)
+        file=discord.File(poster) if poster else None
     )
 
 # =========================================================
@@ -211,6 +181,7 @@ async def slash_stats(interaction, username: str):
 # =========================================================
 @tree.command(name="poster", description="Update bounty poster")
 async def poster(interaction, username: str, picture: discord.Attachment):
+
     if interaction.user.name.lower() not in AUTHORIZED_USERS:
         await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
         return
@@ -218,6 +189,7 @@ async def poster(interaction, username: str, picture: discord.Attachment):
     os.makedirs(POSTER_FOLDER, exist_ok=True)
 
     ext = picture.filename.split(".")[-1].lower()
+
     if ext not in ["png", "jpg", "jpeg", "webp"]:
         await interaction.response.send_message("❌ Invalid format.", ephemeral=True)
         return
@@ -228,10 +200,11 @@ async def poster(interaction, username: str, picture: discord.Attachment):
     await interaction.response.send_message("📦 Poster updated.")
 
 # =========================================================
-# SET TITLE
+# TITLE
 # =========================================================
 @tree.command(name="settitle", description="Set pirate title")
 async def set_title(interaction, username: str, title: str):
+
     if interaction.user.name.lower() not in AUTHORIZED_USERS:
         await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
         return
@@ -244,11 +217,9 @@ async def set_title(interaction, username: str, title: str):
     titles[member.name] = title
     await interaction.response.send_message(f"🎖️ Title set for **{member.display_name}**")
 
-# =========================================================
-# RESET TITLE
-# =========================================================
 @tree.command(name="resettitle", description="Reset pirate title")
 async def reset_title(interaction, username: str):
+
     if interaction.user.name.lower() not in AUTHORIZED_USERS:
         await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
         return
@@ -262,10 +233,11 @@ async def reset_title(interaction, username: str):
     await interaction.response.send_message(f"🧹 Title reset for **{member.display_name}**")
 
 # =========================================================
-# SET RANK
+# RANK
 # =========================================================
 @tree.command(name="setrank", description="Set pirate rank")
 async def set_rank(interaction, username: str, rank: str):
+
     if interaction.user.name.lower() not in AUTHORIZED_USERS:
         await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
         return
@@ -278,11 +250,9 @@ async def set_rank(interaction, username: str, rank: str):
     ranks[member.name] = rank
     await interaction.response.send_message(f"🏆 Rank set for **{member.display_name}**")
 
-# =========================================================
-# RESET RANK
-# =========================================================
 @tree.command(name="resetrank", description="Reset pirate rank")
 async def reset_rank(interaction, username: str):
+
     if interaction.user.name.lower() not in AUTHORIZED_USERS:
         await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
         return
@@ -296,10 +266,11 @@ async def reset_rank(interaction, username: str):
     await interaction.response.send_message(f"🧹 Rank reset for **{member.display_name}**")
 
 # =========================================================
-# SET ABILITYS
+# ABILITIES
 # =========================================================
 @tree.command(name="setability", description="Set pirate abilities")
 async def set_ability(interaction, username: str, ability: str):
+
     if interaction.user.name.lower() not in AUTHORIZED_USERS:
         await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
         return
@@ -312,11 +283,9 @@ async def set_ability(interaction, username: str, ability: str):
     abilities[member.name] = ability
     await interaction.response.send_message(f"⚔️ Abilities set for **{member.display_name}**")
 
-# =========================================================
-# RESET ABILITYS
-# =========================================================
 @tree.command(name="resetability", description="Reset pirate abilities")
 async def reset_ability(interaction, username: str):
+
     if interaction.user.name.lower() not in AUTHORIZED_USERS:
         await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
         return
@@ -328,6 +297,21 @@ async def reset_ability(interaction, username: str):
 
     abilities[member.name] = "None"
     await interaction.response.send_message(f"🧹 Abilities reset for **{member.display_name}**")
+
+# =========================================================
+# DELIVERY ROUTE
+# =========================================================
+@tree.command(name="setdeliveryroute", description="Set episode channel")
+async def set_route(interaction, channel: discord.TextChannel):
+
+    if interaction.user.name.lower() not in AUTHORIZED_USERS:
+        await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
+        return
+
+    global delivery_channel_id
+    delivery_channel_id = channel.id
+
+    await interaction.response.send_message(f"📡 Route set to {channel.mention}")
 
 # =========================================================
 # READY
