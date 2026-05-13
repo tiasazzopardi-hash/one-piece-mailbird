@@ -41,7 +41,6 @@ AUTHORIZED_USERS = [
 # STORAGE
 # =========================================================
 titles = {}
-ranks = {}
 abilities = {}
 
 # =========================================================
@@ -51,7 +50,7 @@ delivery_channel_id = None
 last_notified = {}
 
 # =========================================================
-# TRACKED SERIES
+# SERIES DATA
 # =========================================================
 series_status = {
     "One Piece (Sub) - Crunchyroll": {"episode": 1100, "released": True},
@@ -110,14 +109,15 @@ def format_duration(delta):
     return f"{days//365}y {(days%365)//30}m {days%30}d"
 
 # =========================================================
-# STATS
+# STATS FORMAT
 # =========================================================
-def format_stats(member, title="Unknown", rank="Unranked", abilities="None"):
+def format_stats(member, title="Unknown", ability="None"):
 
     role = member.top_role.name
     now = datetime.now(timezone.utc)
 
     crew = "Unknown Seas"
+
     if member.joined_at:
         crew = format_duration(now - member.joined_at)
 
@@ -126,9 +126,8 @@ def format_stats(member, title="Unknown", rank="Unranked", abilities="None"):
     return f"""
 🏴‍☠️ **Pirate:** {member.display_name}
 🎖️ **Title:** {title}
-🏆 **Rank:** {rank}
 🎭 **Role:** {role}
-⚔️ **Abilities:** {abilities}
+⚔️ **Abilities:** {ability}
 ⚓ **Time in Crew:** {crew}
 🌊 **Time as Pirate:** {pirate}
 """
@@ -150,7 +149,6 @@ async def stats(ctx, *, username):
         content=format_stats(
             member,
             titles.get(member.name, "Unknown"),
-            ranks.get(member.name, "Unranked"),
             abilities.get(member.name, "None")
         ),
         file=discord.File(poster) if poster else None
@@ -170,14 +168,13 @@ async def slash_stats(interaction, username: str):
         content=format_stats(
             member,
             titles.get(member.name, "Unknown"),
-            ranks.get(member.name, "Unranked"),
             abilities.get(member.name, "None")
         ),
         file=discord.File(poster) if poster else None
     )
 
 # =========================================================
-# POSTER
+# POSTER COMMAND
 # =========================================================
 @tree.command(name="poster", description="Update bounty poster")
 async def poster(interaction, username: str, picture: discord.Attachment):
@@ -215,8 +212,14 @@ async def set_title(interaction, username: str, title: str):
         return
 
     titles[member.name] = title
-    await interaction.response.send_message(f"🎖️ Title set for **{member.display_name}**")
 
+    await interaction.response.send_message(
+        f"🎖️ Title set for **{member.display_name}**"
+    )
+
+# =========================================================
+# RESET TITLE
+# =========================================================
 @tree.command(name="resettitle", description="Reset pirate title")
 async def reset_title(interaction, username: str):
 
@@ -230,43 +233,13 @@ async def reset_title(interaction, username: str):
         return
 
     titles[member.name] = "Unknown"
-    await interaction.response.send_message(f"🧹 Title reset for **{member.display_name}**")
+
+    await interaction.response.send_message(
+        f"🧹 Title reset for **{member.display_name}**"
+    )
 
 # =========================================================
-# RANK
-# =========================================================
-@tree.command(name="setrank", description="Set pirate rank")
-async def set_rank(interaction, username: str, rank: str):
-
-    if interaction.user.name.lower() not in AUTHORIZED_USERS:
-        await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
-        return
-
-    member = find_member(interaction.guild, username)
-    if not member:
-        await interaction.response.send_message("❌ Pirate not found.", ephemeral=True)
-        return
-
-    ranks[member.name] = rank
-    await interaction.response.send_message(f"🏆 Rank set for **{member.display_name}**")
-
-@tree.command(name="resetrank", description="Reset pirate rank")
-async def reset_rank(interaction, username: str):
-
-    if interaction.user.name.lower() not in AUTHORIZED_USERS:
-        await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
-        return
-
-    member = find_member(interaction.guild, username)
-    if not member:
-        await interaction.response.send_message("❌ Pirate not found.", ephemeral=True)
-        return
-
-    ranks[member.name] = "Unranked"
-    await interaction.response.send_message(f"🧹 Rank reset for **{member.display_name}**")
-
-# =========================================================
-# ABILITIES
+# SET ABILITIES
 # =========================================================
 @tree.command(name="setability", description="Set pirate abilities")
 async def set_ability(interaction, username: str, ability: str):
@@ -281,8 +254,14 @@ async def set_ability(interaction, username: str, ability: str):
         return
 
     abilities[member.name] = ability
-    await interaction.response.send_message(f"⚔️ Abilities set for **{member.display_name}**")
 
+    await interaction.response.send_message(
+        f"⚔️ Abilities set for **{member.display_name}**"
+    )
+
+# =========================================================
+# RESET ABILITIES
+# =========================================================
 @tree.command(name="resetability", description="Reset pirate abilities")
 async def reset_ability(interaction, username: str):
 
@@ -296,7 +275,10 @@ async def reset_ability(interaction, username: str):
         return
 
     abilities[member.name] = "None"
-    await interaction.response.send_message(f"🧹 Abilities reset for **{member.display_name}**")
+
+    await interaction.response.send_message(
+        f"🧹 Abilities reset for **{member.display_name}**"
+    )
 
 # =========================================================
 # DELIVERY ROUTE
@@ -311,7 +293,9 @@ async def set_route(interaction, channel: discord.TextChannel):
     global delivery_channel_id
     delivery_channel_id = channel.id
 
-    await interaction.response.send_message(f"📡 Route set to {channel.mention}")
+    await interaction.response.send_message(
+        f"📡 Route set to {channel.mention}"
+    )
 
 # =========================================================
 # READY
@@ -319,7 +303,7 @@ async def set_route(interaction, channel: discord.TextChannel):
 @bot.event
 async def on_ready():
     await tree.sync()
-    print(f"Den Den Mushi connected as {bot.user}")
+    print(f"Logged in as {bot.user}")
 
 # =========================================================
 # RUN
