@@ -36,7 +36,7 @@ POSTER_FOLDER = "bounty_posters"
 DEFAULT_LOST_POSTER = "bounty_posters/lost.png"
 
 # =========================================================
-# AUTHORIZED USERS
+# AUTHORIZED USERS (ADMINS)
 # =========================================================
 AUTHORIZED_USERS = [
     "king_matti_123",
@@ -61,32 +61,26 @@ last_notified = {}
 # TRACKED SERIES
 # =========================================================
 series_status = {
-
     "One Piece (Sub) - Crunchyroll": {
         "episode": 1100,
         "released": True
     },
-
     "One Piece (Dub) - Anime Dub": {
         "episode": 1080,
         "released": True
     },
-
     "One Piece Remake (Sub) - Crunchyroll": {
         "episode": 0,
         "released": False
     },
-
     "One Piece Remake (Dub) - Anime Dub": {
         "episode": 0,
         "released": False
     },
-
     "One Piece LEGO - Netflix": {
         "released": False,
         "release_date": "September 29th"
     },
-
     "One Piece Live Action - Netflix": {
         "released": True
     }
@@ -126,8 +120,9 @@ def find_member(guild, query):
 # =========================================================
 def get_poster_path(username):
     base = normalize(username)
+    extensions = ["png", "jpg", "jpeg", "webp"]
 
-    for ext in ["png", "jpg", "jpeg", "webp"]:
+    for ext in extensions:
         path = os.path.join(POSTER_FOLDER, f"{base}.{ext}")
         if os.path.exists(path):
             return path
@@ -148,7 +143,7 @@ def format_duration(delta):
 # =========================================================
 # FORMAT STATS
 # =========================================================
-def format_stats(member, title="Unknown", rank="Unranked", ability="None"):
+def format_stats(member, title="Unknown", rank="Unranked", abilities_text="None"):
     role = member.top_role.name
     now = datetime.now(timezone.utc)
 
@@ -160,7 +155,7 @@ def format_stats(member, title="Unknown", rank="Unranked", ability="None"):
 🎖️ **Title:** {title}
 🏆 **Rank:** {rank}
 🎭 **Role:** {role}
-⚔️ **Abilitys:** {ability}
+⚔️ **Abilities:** {abilities_text}
 ⚓ **Time in Crew:** {crew_duration}
 🌊 **Time as Pirate:** {pirate_duration}
 """
@@ -185,7 +180,7 @@ async def stats(ctx, *, username):
             ranks.get(member.name, "Unranked"),
             abilities.get(member.name, "None")
         ),
-        file=discord.File(poster) if poster else None
+        file=(discord.File(poster) if poster else None)
     )
 
 # =========================================================
@@ -208,7 +203,7 @@ async def slash_stats(interaction, username: str):
             ranks.get(member.name, "Unranked"),
             abilities.get(member.name, "None")
         ),
-        file=discord.File(poster) if poster else None
+        file=(discord.File(poster) if poster else None)
     )
 
 # =========================================================
@@ -223,7 +218,6 @@ async def poster(interaction, username: str, picture: discord.Attachment):
     os.makedirs(POSTER_FOLDER, exist_ok=True)
 
     ext = picture.filename.split(".")[-1].lower()
-
     if ext not in ["png", "jpg", "jpeg", "webp"]:
         await interaction.response.send_message("❌ Invalid format.", ephemeral=True)
         return
@@ -243,7 +237,6 @@ async def set_title(interaction, username: str, title: str):
         return
 
     member = find_member(interaction.guild, username)
-
     if not member:
         await interaction.response.send_message("❌ Pirate not found.", ephemeral=True)
         return
@@ -261,7 +254,6 @@ async def reset_title(interaction, username: str):
         return
 
     member = find_member(interaction.guild, username)
-
     if not member:
         await interaction.response.send_message("❌ Pirate not found.", ephemeral=True)
         return
@@ -279,7 +271,6 @@ async def set_rank(interaction, username: str, rank: str):
         return
 
     member = find_member(interaction.guild, username)
-
     if not member:
         await interaction.response.send_message("❌ Pirate not found.", ephemeral=True)
         return
@@ -297,7 +288,6 @@ async def reset_rank(interaction, username: str):
         return
 
     member = find_member(interaction.guild, username)
-
     if not member:
         await interaction.response.send_message("❌ Pirate not found.", ephemeral=True)
         return
@@ -306,40 +296,38 @@ async def reset_rank(interaction, username: str):
     await interaction.response.send_message(f"🧹 Rank reset for **{member.display_name}**")
 
 # =========================================================
-# SET ABILITY
+# SET ABILITYS
 # =========================================================
-@tree.command(name="setability", description="Set pirate ability")
+@tree.command(name="setability", description="Set pirate abilities")
 async def set_ability(interaction, username: str, ability: str):
     if interaction.user.name.lower() not in AUTHORIZED_USERS:
         await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
         return
 
     member = find_member(interaction.guild, username)
-
     if not member:
         await interaction.response.send_message("❌ Pirate not found.", ephemeral=True)
         return
 
     abilities[member.name] = ability
-    await interaction.response.send_message(f"⚔️ Ability set for **{member.display_name}**")
+    await interaction.response.send_message(f"⚔️ Abilities set for **{member.display_name}**")
 
 # =========================================================
-# RESET ABILITY
+# RESET ABILITYS
 # =========================================================
-@tree.command(name="resetability", description="Reset pirate ability")
+@tree.command(name="resetability", description="Reset pirate abilities")
 async def reset_ability(interaction, username: str):
     if interaction.user.name.lower() not in AUTHORIZED_USERS:
         await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
         return
 
     member = find_member(interaction.guild, username)
-
     if not member:
         await interaction.response.send_message("❌ Pirate not found.", ephemeral=True)
         return
 
     abilities[member.name] = "None"
-    await interaction.response.send_message(f"🧹 Ability reset for **{member.display_name}**")
+    await interaction.response.send_message(f"🧹 Abilities reset for **{member.display_name}**")
 
 # =========================================================
 # READY
