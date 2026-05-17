@@ -6,6 +6,7 @@ import asyncio
 from datetime import datetime, timezone
 import traceback
 import re
+import json
 
 # =========================================================
 # TOKEN
@@ -42,6 +43,9 @@ AUTHORIZED_USERS = [
 # =========================================================
 titles = {}
 abilities = {}
+weapons = {}
+
+DATA_FILE = "pirate_data.json"
 
 # =========================================================
 # DELIVERY
@@ -53,40 +57,120 @@ last_notified = {}
 # SERIES DATA
 # =========================================================
 series_status = {
-    "One Piece (Sub) - Crunchyroll": {"episode": 1100, "released": True},
-    "One Piece (Dub) - Anime Dub": {"episode": 1080, "released": True},
-    "One Piece Remake (Sub) - Crunchyroll": {"episode": 0, "released": False},
-    "One Piece Remake (Dub) - Anime Dub": {"episode": 0, "released": False},
-    "One Piece LEGO - Netflix": {"released": False, "release_date": "September 29th"},
-    "One Piece Live Action - Netflix": {"released": True}
+    "One Piece (Sub) - Crunchyroll": {
+        "episode": 1100,
+        "released": True
+    },
+
+    "One Piece (Dub) - Anime Dub": {
+        "episode": 1080,
+        "released": True
+    },
+
+    "One Piece Remake (Sub) - Crunchyroll": {
+        "episode": 0,
+        "released": False
+    },
+
+    "One Piece Remake (Dub) - Anime Dub": {
+        "episode": 0,
+        "released": False
+    },
+
+    "One Piece LEGO - Netflix": {
+        "released": False,
+        "release_date": "September 29th"
+    },
+
+    "One Piece Live Action - Netflix": {
+        "released": True
+    }
 }
+
+# =========================================================
+# SAVE DATA
+# =========================================================
+def save_data():
+
+    data = {
+        "titles": titles,
+        "abilities": abilities,
+        "weapons": weapons
+    }
+
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f)
+
+# =========================================================
+# LOAD DATA
+# =========================================================
+def load_data():
+
+    global titles
+    global abilities
+    global weapons
+
+    if not os.path.exists(DATA_FILE):
+        return
+
+    with open(DATA_FILE, "r") as f:
+
+        data = json.load(f)
+
+        titles = data.get("titles", {})
+        abilities = data.get("abilities", {})
+        weapons = data.get("weapons", {})
 
 # =========================================================
 # NORMALIZE
 # =========================================================
 def normalize(text):
+
     text = text.lower().strip()
+
     text = text.replace(" ", "")
-    text = re.sub(r'[^a-z0-9_-]', '', text)
+
+    text = re.sub(
+        r'[^a-z0-9_-]',
+        '',
+        text
+    )
+
     return text
 
 # =========================================================
 # FIND MEMBER
 # =========================================================
 def find_member(guild, query):
+
     query = normalize(query)
 
-    for m in guild.members:
-        if normalize(m.name) == query or normalize(m.display_name) == query:
-            return m
+    for member in guild.members:
 
-    for m in guild.members:
-        if normalize(m.name).startswith(query) or normalize(m.display_name).startswith(query):
-            return m
+        if (
+            normalize(member.name) == query
+            or
+            normalize(member.display_name) == query
+        ):
+            return member
 
-    for m in guild.members:
-        if query in normalize(m.name) or query in normalize(m.display_name):
-            return m
+    for member in guild.members:
+
+        if (
+            normalize(member.name).startswith(query)
+            or
+            normalize(member.display_name).startswith(query)
+        ):
+            return member
+
+    for member in guild.members:
+
+        if (
+            query in normalize(member.name)
+            or
+            query in normalize(member.display_name)
+        ):
+            return member
 
     return None
 
@@ -94,207 +178,547 @@ def find_member(guild, query):
 # POSTER
 # =========================================================
 def get_poster_path(username):
+
     base = normalize(username)
-    for ext in ["png", "jpg", "jpeg", "webp"]:
-        path = os.path.join(POSTER_FOLDER, f"{base}.{ext}")
+
+    for ext in [
+        "png",
+        "jpg",
+        "jpeg",
+        "webp"
+    ]:
+
+        path = os.path.join(
+            POSTER_FOLDER,
+            f"{base}.{ext}"
+        )
+
         if os.path.exists(path):
             return path
+
     return None
 
 # =========================================================
 # TIME FORMAT
 # =========================================================
 def format_duration(delta):
+
     days = delta.days
-    return f"{days//365}y {(days%365)//30}m {days%30}d"
+
+    years = days // 365
+
+    months = (days % 365) // 30
+
+    remaining_days = days % 30
+
+    return (
+        f"{years}y "
+        f"{months}m "
+        f"{remaining_days}d"
+    )
 
 # =========================================================
 # STATS FORMAT
 # =========================================================
-def format_stats(member, title="Unknown", ability="None"):
+def format_stats(
+    member,
+    title="Unknown",
+    ability="None",
+    weapon="None"
+):
 
     role = member.top_role.name
-    now = datetime.now(timezone.utc)
 
-    crew = "Unknown Seas"
+    now = datetime.now(
+        timezone.utc
+    )
 
     if member.joined_at:
-        crew = format_duration(now - member.joined_at)
 
-    pirate = format_duration(now - member.created_at)
+        crew = format_duration(
+            now - member.joined_at
+        )
+
+    else:
+
+        crew = "Unknown Seas"
+
+    pirate = format_duration(
+        now - member.created_at
+    )
 
     return f"""
 🏴‍☠️ **Pirate:** {member.display_name}
 🎖️ **Title:** {title}
 🎭 **Role:** {role}
-⚔️ **Abilities:** {ability}
+🌀 **Abilities:** {ability}
+🗡️ **Weapons:** {weapon}
 ⚓ **Time in Crew:** {crew}
 🌊 **Time as Pirate:** {pirate}
 """
 
 # =========================================================
-# STATS COMMANDS
+# PREFIX STATS
 # =========================================================
 @bot.command()
 async def stats(ctx, *, username):
-    member = find_member(ctx.guild, username)
+
+    member = find_member(
+        ctx.guild,
+        username
+    )
 
     if not member:
-        await ctx.send("❌ Pirate not found.")
+
+        await ctx.send(
+            "❌ Pirate not found."
+        )
+
         return
 
-    poster = get_poster_path(member.name) or get_poster_path(member.display_name)
+    poster = (
+        get_poster_path(member.name)
+        or
+        get_poster_path(member.display_name)
+    )
 
     await ctx.send(
         content=format_stats(
             member,
             titles.get(member.name, "Unknown"),
-            abilities.get(member.name, "None")
+            abilities.get(member.name, "None"),
+            weapons.get(member.name, "None")
         ),
-        file=discord.File(poster) if poster else None
+        file=(
+            discord.File(poster)
+            if poster
+            else None
+        )
     )
 
-@tree.command(name="stats", description="Check pirate stats")
-async def slash_stats(interaction, username: str):
-    member = find_member(interaction.guild, username)
+# =========================================================
+# SLASH STATS
+# =========================================================
+@tree.command(
+    name="stats",
+    description="Check pirate stats"
+)
+async def slash_stats(
+    interaction,
+    username: str
+):
+
+    member = find_member(
+        interaction.guild,
+        username
+    )
 
     if not member:
-        await interaction.response.send_message("❌ Pirate not found.", ephemeral=True)
+
+        await interaction.response.send_message(
+            "❌ Pirate not found.",
+            ephemeral=True
+        )
+
         return
 
-    poster = get_poster_path(member.name) or get_poster_path(member.display_name)
+    poster = (
+        get_poster_path(member.name)
+        or
+        get_poster_path(member.display_name)
+    )
 
     await interaction.response.send_message(
         content=format_stats(
             member,
             titles.get(member.name, "Unknown"),
-            abilities.get(member.name, "None")
+            abilities.get(member.name, "None"),
+            weapons.get(member.name, "None")
         ),
-        file=discord.File(poster) if poster else None
+        file=(
+            discord.File(poster)
+            if poster
+            else None
+        )
     )
 
 # =========================================================
-# POSTER COMMAND
+# POSTER
 # =========================================================
-@tree.command(name="poster", description="Update bounty poster")
-async def poster(interaction, username: str, picture: discord.Attachment):
+@tree.command(
+    name="poster",
+    description="Update bounty poster"
+)
+async def poster(
+    interaction,
+    username: str,
+    picture: discord.Attachment
+):
 
-    if interaction.user.name.lower() not in AUTHORIZED_USERS:
-        await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
+    if (
+        interaction.user.name.lower()
+        not in AUTHORIZED_USERS
+    ):
+
+        await interaction.response.send_message(
+            "❌ Not allowed.",
+            ephemeral=True
+        )
+
         return
 
-    os.makedirs(POSTER_FOLDER, exist_ok=True)
+    os.makedirs(
+        POSTER_FOLDER,
+        exist_ok=True
+    )
 
-    ext = picture.filename.split(".")[-1].lower()
+    ext = (
+        picture.filename
+        .split(".")[-1]
+        .lower()
+    )
 
-    if ext not in ["png", "jpg", "jpeg", "webp"]:
-        await interaction.response.send_message("❌ Invalid format.", ephemeral=True)
+    if ext not in [
+        "png",
+        "jpg",
+        "jpeg",
+        "webp"
+    ]:
+
+        await interaction.response.send_message(
+            "❌ Invalid format.",
+            ephemeral=True
+        )
+
         return
 
-    path = os.path.join(POSTER_FOLDER, f"{normalize(username)}.{ext}")
+    path = os.path.join(
+        POSTER_FOLDER,
+        f"{normalize(username)}.{ext}"
+    )
+
     await picture.save(path)
 
-    await interaction.response.send_message("📦 Poster updated.")
+    await interaction.response.send_message(
+        "📦 Poster updated."
+    )
 
 # =========================================================
-# TITLE
+# SET TITLE
 # =========================================================
-@tree.command(name="settitle", description="Set pirate title")
-async def set_title(interaction, username: str, title: str):
+@tree.command(
+    name="settitle",
+    description="Set pirate title"
+)
+async def set_title(
+    interaction,
+    username: str,
+    title: str
+):
 
-    if interaction.user.name.lower() not in AUTHORIZED_USERS:
-        await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
+    if (
+        interaction.user.name.lower()
+        not in AUTHORIZED_USERS
+    ):
+
+        await interaction.response.send_message(
+            "❌ Not allowed.",
+            ephemeral=True
+        )
+
         return
 
-    member = find_member(interaction.guild, username)
+    member = find_member(
+        interaction.guild,
+        username
+    )
+
     if not member:
-        await interaction.response.send_message("❌ Pirate not found.", ephemeral=True)
+
+        await interaction.response.send_message(
+            "❌ Pirate not found.",
+            ephemeral=True
+        )
+
         return
 
     titles[member.name] = title
 
+    save_data()
+
     await interaction.response.send_message(
-        f"🎖️ Title set for **{member.display_name}**"
+        f"🎖️ Title set for "
+        f"**{member.display_name}**"
     )
 
 # =========================================================
 # RESET TITLE
 # =========================================================
-@tree.command(name="resettitle", description="Reset pirate title")
-async def reset_title(interaction, username: str):
+@tree.command(
+    name="resettitle",
+    description="Reset pirate title"
+)
+async def reset_title(
+    interaction,
+    username: str
+):
 
-    if interaction.user.name.lower() not in AUTHORIZED_USERS:
-        await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
+    if (
+        interaction.user.name.lower()
+        not in AUTHORIZED_USERS
+    ):
+
+        await interaction.response.send_message(
+            "❌ Not allowed.",
+            ephemeral=True
+        )
+
         return
 
-    member = find_member(interaction.guild, username)
+    member = find_member(
+        interaction.guild,
+        username
+    )
+
     if not member:
-        await interaction.response.send_message("❌ Pirate not found.", ephemeral=True)
+
+        await interaction.response.send_message(
+            "❌ Pirate not found.",
+            ephemeral=True
+        )
+
         return
 
     titles[member.name] = "Unknown"
 
+    save_data()
+
     await interaction.response.send_message(
-        f"🧹 Title reset for **{member.display_name}**"
+        f"🧹 Title reset for "
+        f"**{member.display_name}**"
     )
 
 # =========================================================
 # SET ABILITIES
 # =========================================================
-@tree.command(name="setability", description="Set pirate abilities")
-async def set_ability(interaction, username: str, ability: str):
+@tree.command(
+    name="setability",
+    description="Set pirate abilities"
+)
+async def set_ability(
+    interaction,
+    username: str,
+    ability: str
+):
 
-    if interaction.user.name.lower() not in AUTHORIZED_USERS:
-        await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
+    if (
+        interaction.user.name.lower()
+        not in AUTHORIZED_USERS
+    ):
+
+        await interaction.response.send_message(
+            "❌ Not allowed.",
+            ephemeral=True
+        )
+
         return
 
-    member = find_member(interaction.guild, username)
+    member = find_member(
+        interaction.guild,
+        username
+    )
+
     if not member:
-        await interaction.response.send_message("❌ Pirate not found.", ephemeral=True)
+
+        await interaction.response.send_message(
+            "❌ Pirate not found.",
+            ephemeral=True
+        )
+
         return
 
     abilities[member.name] = ability
 
+    save_data()
+
     await interaction.response.send_message(
-        f"⚔️ Abilities set for **{member.display_name}**"
+        f"🌀 Abilities set for "
+        f"**{member.display_name}**"
     )
 
 # =========================================================
 # RESET ABILITIES
 # =========================================================
-@tree.command(name="resetability", description="Reset pirate abilities")
-async def reset_ability(interaction, username: str):
+@tree.command(
+    name="resetability",
+    description="Reset pirate abilities"
+)
+async def reset_ability(
+    interaction,
+    username: str
+):
 
-    if interaction.user.name.lower() not in AUTHORIZED_USERS:
-        await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
+    if (
+        interaction.user.name.lower()
+        not in AUTHORIZED_USERS
+    ):
+
+        await interaction.response.send_message(
+            "❌ Not allowed.",
+            ephemeral=True
+        )
+
         return
 
-    member = find_member(interaction.guild, username)
+    member = find_member(
+        interaction.guild,
+        username
+    )
+
     if not member:
-        await interaction.response.send_message("❌ Pirate not found.", ephemeral=True)
+
+        await interaction.response.send_message(
+            "❌ Pirate not found.",
+            ephemeral=True
+        )
+
         return
 
     abilities[member.name] = "None"
 
+    save_data()
+
     await interaction.response.send_message(
-        f"🧹 Abilities reset for **{member.display_name}**"
+        f"🧹 Abilities reset for "
+        f"**{member.display_name}**"
     )
 
 # =========================================================
-# DELIVERY ROUTE
+# SET WEAPON
 # =========================================================
-@tree.command(name="setdeliveryroute", description="Set episode channel")
-async def set_route(interaction, channel: discord.TextChannel):
+@tree.command(
+    name="setweapon",
+    description="Set pirate weapon"
+)
+async def set_weapon(
+    interaction,
+    username: str,
+    weapon: str
+):
 
-    if interaction.user.name.lower() not in AUTHORIZED_USERS:
-        await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
+    if (
+        interaction.user.name.lower()
+        not in AUTHORIZED_USERS
+    ):
+
+        await interaction.response.send_message(
+            "❌ Not allowed.",
+            ephemeral=True
+        )
+
+        return
+
+    member = find_member(
+        interaction.guild,
+        username
+    )
+
+    if not member:
+
+        await interaction.response.send_message(
+            "❌ Pirate not found.",
+            ephemeral=True
+        )
+
+        return
+
+    weapons[member.name] = weapon
+
+    save_data()
+
+    await interaction.response.send_message(
+        f"🗡️ Weapon set for "
+        f"**{member.display_name}**"
+    )
+
+# =========================================================
+# RESET WEAPON
+# =========================================================
+@tree.command(
+    name="resetweapon",
+    description="Reset pirate weapon"
+)
+async def reset_weapon(
+    interaction,
+    username: str
+):
+
+    if (
+        interaction.user.name.lower()
+        not in AUTHORIZED_USERS
+    ):
+
+        await interaction.response.send_message(
+            "❌ Not allowed.",
+            ephemeral=True
+        )
+
+        return
+
+    member = find_member(
+        interaction.guild,
+        username
+    )
+
+    if not member:
+
+        await interaction.response.send_message(
+            "❌ Pirate not found.",
+            ephemeral=True
+        )
+
+        return
+
+    weapons[member.name] = "None"
+
+    save_data()
+
+    await interaction.response.send_message(
+        f"🧹 Weapon reset for "
+        f"**{member.display_name}**"
+    )
+
+# =========================================================
+# SET DELIVERY ROUTE
+# =========================================================
+@tree.command(
+    name="setdeliveryroute",
+    description="Set episode channel"
+)
+async def set_route(
+    interaction,
+    channel: discord.TextChannel
+):
+
+    if (
+        interaction.user.name.lower()
+        not in AUTHORIZED_USERS
+    ):
+
+        await interaction.response.send_message(
+            "❌ Not allowed.",
+            ephemeral=True
+        )
+
         return
 
     global delivery_channel_id
+
     delivery_channel_id = channel.id
 
     await interaction.response.send_message(
-        f"📡 Route set to {channel.mention}"
+        f"📡 Route set to "
+        f"{channel.mention}"
     )
 
 # =========================================================
@@ -302,8 +726,15 @@ async def set_route(interaction, channel: discord.TextChannel):
 # =========================================================
 @bot.event
 async def on_ready():
+
+    load_data()
+
     await tree.sync()
-    print(f"Logged in as {bot.user}")
+
+    print(
+        f"Den Den Mushi connected as "
+        f"{bot.user}"
+    )
 
 # =========================================================
 # RUN
