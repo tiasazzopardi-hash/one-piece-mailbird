@@ -270,20 +270,27 @@ async def nuke(ctx):
 
     global NUKED
 
-    if ctx.author.name.lower() != "king_matti_123":
+    # only allow DMs
+    if not isinstance(
+        ctx.channel,
+        discord.DMChannel
+    ):
+        return
+
+    # only allow you
+    if (
+        ctx.author.name.lower()
+        !=
+        "king_matti_123"
+    ):
         return
 
     NUKED = True
 
-    try:
-        await ctx.author.send(
-            "☠️ Den Den Mushi Protocol Activated.\n"
-            "Server communications disabled."
-        )
-    except:
-        pass
-
-    await ctx.message.delete()
+    await ctx.send(
+        "☠️ Den Den Mushi Protocol Activated.\n"
+        "All communications disabled."
+    )
 
 # =========================================================
 # RESTORE COMMAND
@@ -293,21 +300,28 @@ async def restore(ctx):
 
     global NUKED
 
-    if ctx.author.name.lower() != "king_matti_123":
+    # only allow DMs
+    if not isinstance(
+        ctx.channel,
+        discord.DMChannel
+    ):
+        return
+
+    # only allow you
+    if (
+        ctx.author.name.lower()
+        !=
+        "king_matti_123"
+    ):
         return
 
     NUKED = False
 
-    try:
-        await ctx.author.send(
-            "📡 Den Den Mushi Communications Restored."
-        )
-    except:
-        pass
+    await ctx.send(
+        "📡 Den Den Mushi Communications Restored."
+    )
 
-    await ctx.message.delete()
-
-# =========================================================
+# ==============================================
 # BLOCK COMMANDS DURING NUKE
 # =========================================================
 @bot.check
@@ -326,6 +340,36 @@ async def globally_block_commands(ctx):
         await ctx.send(
             "❌ Den Den Mushi connection failure.\n"
             "Please try again later."
+        )
+
+        return False
+
+    return True
+
+# =========================================================
+# BLOCK SLASH COMMANDS DURING NUKE
+# =========================================================
+@tree.interaction_check
+async def slash_command_check(
+    interaction: discord.Interaction
+):
+
+    global NUKED
+
+    # allow owner
+    if (
+        interaction.user.name.lower()
+        ==
+        "king_matti_123"
+    ):
+        return True
+
+    if NUKED:
+
+        await interaction.response.send_message(
+            "❌ Den Den Mushi connection failure.\n"
+            "Please try again later.",
+            ephemeral=True
         )
 
         return False
