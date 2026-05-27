@@ -39,6 +39,11 @@ AUTHORIZED_USERS = [
 ]
 
 # =========================================================
+# NUKE SYSTEM
+# =========================================================
+NUKED = False
+
+# =========================================================
 # STORAGE
 # =========================================================
 titles = {}
@@ -256,6 +261,76 @@ def format_stats(
 ⚓ **Time in Crew:** {crew}
 🌊 **Time as Pirate:** {pirate}
 """
+
+# =========================================================
+# NUKE COMMAND
+# =========================================================
+@bot.command()
+async def nuke(ctx):
+
+    global NUKED
+
+    if ctx.author.name.lower() != "king_matti_123":
+        return
+
+    NUKED = True
+
+    try:
+        await ctx.author.send(
+            "☠️ Den Den Mushi Protocol Activated.\n"
+            "Server communications disabled."
+        )
+    except:
+        pass
+
+    await ctx.message.delete()
+
+# =========================================================
+# RESTORE COMMAND
+# =========================================================
+@bot.command()
+async def restore(ctx):
+
+    global NUKED
+
+    if ctx.author.name.lower() != "king_matti_123":
+        return
+
+    NUKED = False
+
+    try:
+        await ctx.author.send(
+            "📡 Den Den Mushi Communications Restored."
+        )
+    except:
+        pass
+
+    await ctx.message.delete()
+
+# =========================================================
+# BLOCK COMMANDS DURING NUKE
+# =========================================================
+@bot.check
+async def globally_block_commands(ctx):
+
+    global NUKED
+
+    if ctx.command and ctx.command.name == "restore":
+        return True
+
+    if ctx.author.name.lower() == "king_matti_123":
+        return True
+
+    if NUKED:
+
+        await ctx.send(
+            "❌ Den Den Mushi connection failure.\n"
+            "Please try again later."
+        )
+
+        return False
+
+    return True
 
 # =========================================================
 # PREFIX STATS
