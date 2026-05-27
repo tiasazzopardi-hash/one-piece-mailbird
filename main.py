@@ -39,18 +39,11 @@ AUTHORIZED_USERS = [
 ]
 
 # =========================================================
-# NUKE SYSTEM
-# =========================================================
-NUKED = False
-
-# =========================================================
 # STORAGE
 # =========================================================
 titles = {}
 abilities = {}
 weapons = {}
-
-DATA_FILE = "pirate_data.json"
 
 # =========================================================
 # DELIVERY
@@ -97,14 +90,27 @@ series_status = {
 # =========================================================
 def save_data():
 
+    os.makedirs(
+        "data",
+        exist_ok=True
+    )
+
     data = {
         "titles": titles,
         "abilities": abilities,
         "weapons": weapons
     }
 
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f)
+    with open(
+        "data/pirate_data.json",
+        "w"
+    ) as f:
+
+        json.dump(
+            data,
+            f,
+            indent=4
+        )
 
 # =========================================================
 # LOAD DATA
@@ -115,10 +121,28 @@ def load_data():
     global abilities
     global weapons
 
-    if not os.path.exists(DATA_FILE):
-        return
+    os.makedirs(
+        "data",
+        exist_ok=True
+    )
 
-    with open(DATA_FILE, "r") as f:
+    path = "data/pirate_data.json"
+
+    if not os.path.exists(path):
+
+        with open(path, "w") as f:
+
+            json.dump(
+                {
+                    "titles": {},
+                    "abilities": {},
+                    "weapons": {}
+                },
+                f,
+                indent=4
+            )
+
+    with open(path, "r") as f:
 
         data = json.load(f)
 
@@ -263,21 +287,26 @@ def format_stats(
 """
 
 # =========================================================
+# SLEEP MODE
+# =========================================================
+SLEEP_MODE = False
+
+# =========================================================
 # NUKE COMMAND
 # =========================================================
 @bot.command()
 async def nuke(ctx):
 
-    global NUKED
+    global SLEEP_MODE
 
-    # only allow DMs
+    # DM only
     if not isinstance(
         ctx.channel,
         discord.DMChannel
     ):
         return
 
-    # only allow you
+    # only you
     if (
         ctx.author.name.lower()
         !=
@@ -285,11 +314,10 @@ async def nuke(ctx):
     ):
         return
 
-    NUKED = True
+    SLEEP_MODE = True
 
     await ctx.send(
-        "☠️ Den Den Mushi Protocol Activated.\n"
-        "All communications disabled."
+        "☠️ Sleep mode activated."
     )
 
 # =========================================================
@@ -298,16 +326,16 @@ async def nuke(ctx):
 @bot.command()
 async def restore(ctx):
 
-    global NUKED
+    global SLEEP_MODE
 
-    # only allow DMs
+    # DM only
     if not isinstance(
         ctx.channel,
         discord.DMChannel
     ):
         return
 
-    # only allow you
+    # only you
     if (
         ctx.author.name.lower()
         !=
@@ -315,48 +343,61 @@ async def restore(ctx):
     ):
         return
 
-    NUKED = False
+    SLEEP_MODE = False
 
     await ctx.send(
-        "📡 Den Den Mushi Communications Restored."
+        "📡 Systems restored."
     )
 
-# ==============================================
-# BLOCK COMMANDS DURING NUKE
+# =========================================================
+# GLOBAL BOT BLOCK
 # =========================================================
 @bot.check
-async def globally_block_commands(ctx):
+async def global_sleep_check(ctx):
 
-    global NUKED
+    global SLEEP_MODE
 
-    if ctx.command and ctx.command.name == "restore":
+    # allow restore
+    if (
+        ctx.command
+        and
+        ctx.command.name == "restore"
+    ):
         return True
 
-    if ctx.author.name.lower() == "king_matti_123":
+    # allow you
+    if (
+        ctx.author.name.lower()
+        ==
+        "king_matti_123"
+    ):
         return True
 
-    if NUKED:
+    # block everything
+    if SLEEP_MODE:
 
-        await ctx.send(
-            "❌ Den Den Mushi connection failure.\n"
-            "Please try again later."
-        )
+        try:
+            await ctx.send(
+                "❌ Pirate not found."
+            )
+        except:
+            pass
 
         return False
 
     return True
 
 # =========================================================
-# BLOCK SLASH COMMANDS DURING NUKE
+# SLASH COMMAND BLOCK
 # =========================================================
 @tree.interaction_check
-async def slash_command_check(
+async def slash_sleep_check(
     interaction: discord.Interaction
 ):
 
-    global NUKED
+    global SLEEP_MODE
 
-    # allow owner
+    # allow you
     if (
         interaction.user.name.lower()
         ==
@@ -364,13 +405,16 @@ async def slash_command_check(
     ):
         return True
 
-    if NUKED:
+    # block everything
+    if SLEEP_MODE:
 
-        await interaction.response.send_message(
-            "❌ Den Den Mushi connection failure.\n"
-            "Please try again later.",
-            ephemeral=True
-        )
+        try:
+            await interaction.response.send_message(
+                "❌ Pirate not found.",
+                ephemeral=True
+            )
+        except:
+            pass
 
         return False
 
