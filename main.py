@@ -33,7 +33,7 @@ bot  = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 
 # =========================================================
-# STORAGE
+# STORAGE  (keyed by str(member.id) — never changes)
 # =========================================================
 titles:    dict[str, str] = {}
 abilities: dict[str, str] = {}
@@ -139,18 +139,30 @@ def load_data() -> None:
 # =========================================================
 # HELPERS
 # =========================================================
+def uid(member: discord.Member) -> str:
+    """Stable key for this member — never changes even if they rename."""
+    return str(member.id)
+
 def normalize(text: str) -> str:
-    return re.sub(r"[^a-z0-9_-]", "", text.lower().strip().replace(" ", ""))
+    """Strips everything except letters, numbers, underscores, hyphens."""
+    return re.sub(r"[^a-z0-9_.-]", "", text.lower().strip())
 
 def find_member(guild: discord.Guild, query: str) -> discord.Member | None:
-    q = normalize(query)
+    """
+    Find a member by:
+      1. Exact match on raw name or display name (case-insensitive)
+      2. Starts-with match
+      3. Contains match
+    Dots and special chars are preserved so '._xcupidx._' still matches.
+    """
+    q = query.strip().lower()
     for check in (
         lambda n: n == q,
         lambda n: n.startswith(q),
         lambda n: q in n,
     ):
         for m in guild.members:
-            if check(normalize(m.name)) or check(normalize(m.display_name)):
+            if check(m.name.lower()) or check(m.display_name.lower()):
                 return m
     return None
 
@@ -169,14 +181,15 @@ def format_duration(delta) -> str:
     return f"{y}y {m}m {d}d"
 
 def format_stats(member: discord.Member) -> str:
+    key  = uid(member)
     now  = datetime.now(timezone.utc)
     crew = format_duration(now - member.joined_at) if member.joined_at else "Unknown Seas"
     return (
         f"🏴‍☠️ **Pirate:** {member.display_name}\n"
-        f"🎖️ **Title:** {titles.get(member.name, 'Unknown')}\n"
+        f"🎖️ **Title:** {titles.get(key, 'Unknown')}\n"
         f"🎭 **Role:** {member.top_role.name}\n"
-        f"🌀 **Abilities:** {abilities.get(member.name, 'None')}\n"
-        f"🗡️ **Weapons:** {weapons.get(member.name, 'None')}\n"
+        f"🌀 **Abilities:** {abilities.get(key, 'None')}\n"
+        f"🗡️ **Weapons:** {weapons.get(key, 'None')}\n"
         f"⚓ **Time in Crew:** {crew}\n"
         f"🌊 **Time as Pirate:** {format_duration(now - member.created_at)}\n"
     )
@@ -190,7 +203,8 @@ def is_authorized(user: discord.User | discord.Member) -> bool:
 
 # =========================================================
 # AUTOCOMPLETE — username
-# Suggests all guild members filtered by what the user types
+# Shows all guild members; filters as you type
+# value is always the raw username (used by find_member)
 # =========================================================
 async def username_autocomplete(
     interaction: discord.Interaction,
@@ -201,16 +215,17 @@ async def username_autocomplete(
     q = current.lower()
     choices = []
     for m in interaction.guild.members:
-        name = m.display_name
-        if q in name.lower() or q in m.name.lower():
-            choices.append(app_commands.Choice(name=name, value=m.name))
+        if q in m.name.lower() or q in m.display_name.lower():
+            # Show display name in the list, pass raw name as value
+            label = f"{m.display_name} ({m.name})" if m.display_name != m.name else m.name
+            choices.append(app_commands.Choice(name=label[:100], value=m.name))
         if len(choices) >= 25:
             break
     return choices
 
 # =========================================================
 # AUTOCOMPLETE — field values (title / ability / weapon)
-# Pre-fills whatever is currently stored for that pirate
+# Pre-populates the box with whatever is already stored
 # =========================================================
 async def _field_autocomplete(
     interaction: discord.Interaction,
@@ -220,18 +235,13 @@ async def _field_autocomplete(
 ) -> list[app_commands.Choice[str]]:
     username = interaction.namespace.username or ""
     member   = find_member(interaction.guild, username) if interaction.guild else None
-    existing = store.get(member.name, fallback) if member else ""
+    existing = store.get(uid(member), fallback) if member else ""
 
     choices: list[app_commands.Choice[str]] = []
-
-    # Always show the currently stored value first (so it acts as a pre-fill)
     if existing and existing != fallback:
         choices.append(app_commands.Choice(name=f"Current: {existing}", value=existing))
-
-    # If the admin is typing something that differs, show it as an option too
     if current and current != existing:
         choices.append(app_commands.Choice(name=current, value=current))
-
     return choices[:25]
 
 async def title_autocomplete(i: discord.Interaction, current: str):
@@ -244,18 +254,13 @@ async def weapon_autocomplete(i: discord.Interaction, current: str):
     return await _field_autocomplete(i, current, weapons, "None")
 
 # =========================================================
-# !nuke / !restore
-# Must be registered BEFORE any global check so they are
-# never blocked — they bypass everything via on_message.
+# !nuke  — works in server AND DMs, owner only
 # =========================================================
 @bot.command()
 async def nuke(ctx):
     global SLEEP_MODE
-    # Only owner, only in DMs
-    if not isinstance(ctx.channel, discord.DMChannel):
-        return
     if ctx.author.name.lower() != OWNER:
-        return
+        return                          # silently ignore non-owners
     if SLEEP_MODE:
         await ctx.send("☠️ Already in sleep mode.")
         return
@@ -267,14 +272,15 @@ async def nuke(ctx):
     await ctx.send(
         "☠️ **Sleep mode activated.**\n"
         "Everyone gets a quiet Den Den Mushi brush-off.\n"
-        "DM me `!restore` to bring it back."
+        "Use `!restore` to bring it back."
     )
 
+# =========================================================
+# !restore — works in server AND DMs, owner only
+# =========================================================
 @bot.command()
 async def restore(ctx):
     global SLEEP_MODE
-    if not isinstance(ctx.channel, discord.DMChannel):
-        return
     if ctx.author.name.lower() != OWNER:
         return
     if not SLEEP_MODE:
@@ -286,40 +292,22 @@ async def restore(ctx):
 
 # =========================================================
 # MESSAGE GATE
-# Runs before any command processing.
-# Owner DMs always go through (for nuke/restore).
-# Everyone else is blocked silently during sleep.
 # =========================================================
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
-
-    is_owner_dm = (
-        isinstance(message.channel, discord.DMChannel)
-        and message.author.name.lower() == OWNER
-    )
-
-    if is_owner_dm:
-        # Owner DMs bypass everything — nuke/restore must always work
+    # Owner always passes through — nuke/restore must always work
+    if message.author.name.lower() == OWNER:
         await bot.process_commands(message)
         return
-
+    # Everyone else is silently blocked during sleep
     if SLEEP_MODE:
-        # Silently ignore — no response at all to non-commands,
-        # sleeping reply handled by the bot.check below for actual commands
         return
-
     await bot.process_commands(message)
 
-# =========================================================
-# GLOBAL CHECK (prefix commands)
-# Only reached if on_message already let it through,
-# so SLEEP_MODE here only fires for owner (who gets a pass).
-# =========================================================
 @bot.check
 async def prefix_sleep_check(ctx):
-    # nuke / restore bypass the check entirely
     if ctx.command and ctx.command.name in ("nuke", "restore"):
         return True
     if ctx.author.name.lower() == OWNER:
@@ -329,9 +317,6 @@ async def prefix_sleep_check(ctx):
         return False
     return True
 
-# =========================================================
-# GLOBAL CHECK (slash commands)
-# =========================================================
 @tree.interaction_check
 async def slash_sleep_check(interaction: discord.Interaction):
     if interaction.user.name.lower() == OWNER:
@@ -359,7 +344,7 @@ async def _admin_set(
     if not member:
         await interaction.response.send_message(r("not_found"), ephemeral=True)
         return
-    store[member.name] = value
+    store[uid(member)] = value          # keyed by stable member ID
     save_data()
     await interaction.response.send_message(
         f"{emoji} {r('field_set')} — **{label}** updated for **{member.display_name}**."
@@ -379,7 +364,7 @@ async def _admin_reset(
     if not member:
         await interaction.response.send_message(r("not_found"), ephemeral=True)
         return
-    store[member.name] = default
+    store[uid(member)] = default
     save_data()
     await interaction.response.send_message(
         f"{r('field_reset')} — **{label}** cleared for **{member.display_name}**."
