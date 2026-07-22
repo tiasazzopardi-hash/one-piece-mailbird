@@ -2,10 +2,26 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import os
+import traceback
 from datetime import datetime, timezone
 import re
 import json
 import random
+from flask import Flask
+from threading import Thread
+
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Den Den Mushi is alive!"
+
+def run_web():
+    app.run(host="0.0.0.0", port=10000)
+
+def keep_alive():
+    t = Thread(target=run_web)
+    t.start()
 
 # =========================================================
 # CONFIG
@@ -24,20 +40,23 @@ delivery_channel_id = None
 
 # =========================================================
 # INTENTS / BOT
+# guild=True + members=True is what fills guild.members cache
 # =========================================================
 intents = discord.Intents.default()
 intents.message_content = True
-intents.members = True
+intents.members          = True      # required for guild.members to work
+intents.guilds           = True
 
 bot  = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 
 # =========================================================
-# STORAGE  (keyed by str(member.id) — never changes)
+# STORAGE  (keyed by str(member.id) — survives renames)
 # =========================================================
-titles:    dict[str, str] = {}
-abilities: dict[str, str] = {}
-weapons:   dict[str, str] = {}
+titles:        dict[str, str] = {}
+abilities:     dict[str, str] = {}
+weapons:       dict[str, str] = {}
+title_options: list[str]      = []   # the pick-list anyone can choose from
 
 # =========================================================
 # SERIES DATA
@@ -111,6 +130,33 @@ REPLIES = {
         "📻 *static* …Transmission unavailable. Stand by.",
         "🌙 The Den Den Mushi has gone dark. Nothing to report.",
     ],
+    "error": [
+        "⚠️ The Den Den Mushi hit rough seas. Try again — bweh.",
+        "🐌 *bweh?* Something went wrong on this end.",
+        "📻 *static* Transmission failed. Try once more.",
+    ],
+    "title_added": [
+        "📋 Title added to the board — bweh heh heh.",
+        "🐌 The pick-list has a new entry. Pirates take note.",
+        "⚓ Logged. That title is now up for the taking.",
+        "🗺️ Added to the title registry. The Grand Line has spoken.",
+    ],
+    "title_removed": [
+        "🧹 Title struck from the board — bweh.",
+        "📋 Gone. That title sails no more.",
+        "🐌 *click* Removed from the pick-list.",
+    ],
+    "title_picked": [
+        "🎖️ Title claimed! The seas will know your name — bweh heh heh.",
+        "🐌 *crackle* Title locked in. Wear it with pride, pirate.",
+        "📜 Registered. The Marines are already updating your bounty poster.",
+        "⚓ Done. That title is yours now.",
+    ],
+    "title_list_empty": [
+        "📋 The title board is bare. Ask an officer to add some — bweh.",
+        "🐌 *silence* No titles on the list yet. Stand by.",
+        "🗺️ Nothing posted yet. The officers haven't stocked the board.",
+    ],
 }
 
 def r(key: str) -> str:
@@ -122,54 +168,69 @@ def r(key: str) -> str:
 def save_data() -> None:
     os.makedirs(DATA_FOLDER, exist_ok=True)
     with open(DATA_PATH, "w") as f:
-        json.dump({"titles": titles, "abilities": abilities, "weapons": weapons}, f, indent=4)
+        json.dump(
+            {
+                "titles":        titles,
+                "abilities":     abilities,
+                "weapons":       weapons,
+                "title_options": title_options,
+            },
+            f, indent=4
+        )
 
 def load_data() -> None:
-    global titles, abilities, weapons
+    global titles, abilities, weapons, title_options
     os.makedirs(DATA_FOLDER, exist_ok=True)
     if not os.path.exists(DATA_PATH):
         save_data()
         return
     with open(DATA_PATH) as f:
         data = json.load(f)
-    titles    = data.get("titles",    {})
-    abilities = data.get("abilities", {})
-    weapons   = data.get("weapons",   {})
+    titles        = data.get("titles",        {})
+    abilities     = data.get("abilities",     {})
+    weapons       = data.get("weapons",       {})
+    title_options = data.get("title_options", [])
 
 # =========================================================
 # HELPERS
 # =========================================================
 def uid(member: discord.Member) -> str:
-    """Stable key for this member — never changes even if they rename."""
     return str(member.id)
-
-def normalize(text: str) -> str:
-    """Strips everything except letters, numbers, underscores, hyphens."""
-    return re.sub(r"[^a-z0-9_.-]", "", text.lower().strip())
 
 def find_member(guild: discord.Guild, query: str) -> discord.Member | None:
     """
-    Find a member by:
-      1. Exact match on raw name or display name (case-insensitive)
-      2. Starts-with match
-      3. Contains match
-    Dots and special chars are preserved so '._xcupidx._' still matches.
+    Search by Discord user ID first (most reliable), then
+    by raw username, then display name — case-insensitive.
+    Handles usernames with dots/underscores like ._xcupidx._
     """
-    q = query.strip().lower()
-    for check in (
-        lambda n: n == q,
-        lambda n: n.startswith(q),
-        lambda n: q in n,
-    ):
-        for m in guild.members:
-            if check(m.name.lower()) or check(m.display_name.lower()):
-                return m
+    q = query.strip()
+
+    # 1. Exact ID match (when autocomplete passes the ID as value)
+    if q.isdigit():
+        return guild.get_member(int(q))
+
+    # 2. Exact raw username match (case-insensitive)
+    ql = q.lower()
+    for m in guild.members:
+        if m.name.lower() == ql or m.display_name.lower() == ql:
+            return m
+
+    # 3. Starts-with
+    for m in guild.members:
+        if m.name.lower().startswith(ql) or m.display_name.lower().startswith(ql):
+            return m
+
+    # 4. Contains
+    for m in guild.members:
+        if ql in m.name.lower() or ql in m.display_name.lower():
+            return m
+
     return None
 
-def get_poster_path(username: str) -> str | None:
-    base = normalize(username)
+def get_poster_path(member_id: str) -> str | None:
+    # Keyed by member ID — no username mangling ever
     for ext in ("png", "jpg", "jpeg", "webp"):
-        path = os.path.join(POSTER_FOLDER, f"{base}.{ext}")
+        path = os.path.join(POSTER_FOLDER, f"{member_id}.{ext}")
         if os.path.exists(path):
             return path
     return None
@@ -195,16 +256,35 @@ def format_stats(member: discord.Member) -> str:
     )
 
 def poster_file(member: discord.Member) -> discord.File | None:
-    path = get_poster_path(member.name) or get_poster_path(member.display_name)
+    path = get_poster_path(uid(member))
     return discord.File(path) if path else None
 
 def is_authorized(user: discord.User | discord.Member) -> bool:
     return user.name.lower() in AUTHORIZED_USERS
 
 # =========================================================
-# AUTOCOMPLETE — username
-# Shows all guild members; filters as you type
-# value is always the raw username (used by find_member)
+# SAFE SLASH RESPONDER
+# Catches any crash and sends a friendly error instead of
+# leaving Discord hanging (which shows "didn't respond")
+# =========================================================
+async def safe_reply(interaction: discord.Interaction, coro):
+    try:
+        await coro
+    except Exception:
+        traceback.print_exc()
+        try:
+            msg = r("error")
+            if interaction.response.is_done():
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(msg, ephemeral=True)
+        except Exception:
+            pass
+
+# =========================================================
+# AUTOCOMPLETE — username (passes member ID as value)
+# Using the ID means find_member never has to parse a weird
+# username — it just does guild.get_member(id) instantly.
 # =========================================================
 async def username_autocomplete(
     interaction: discord.Interaction,
@@ -216,16 +296,16 @@ async def username_autocomplete(
     choices = []
     for m in interaction.guild.members:
         if q in m.name.lower() or q in m.display_name.lower():
-            # Show display name in the list, pass raw name as value
-            label = f"{m.display_name} ({m.name})" if m.display_name != m.name else m.name
-            choices.append(app_commands.Choice(name=label[:100], value=m.name))
+            label = m.display_name
+            if m.display_name != m.name:
+                label = f"{m.display_name} ({m.name})"
+            choices.append(app_commands.Choice(name=label[:100], value=str(m.id)))
         if len(choices) >= 25:
             break
     return choices
 
 # =========================================================
-# AUTOCOMPLETE — field values (title / ability / weapon)
-# Pre-populates the box with whatever is already stored
+# AUTOCOMPLETE — field values
 # =========================================================
 async def _field_autocomplete(
     interaction: discord.Interaction,
@@ -254,13 +334,14 @@ async def weapon_autocomplete(i: discord.Interaction, current: str):
     return await _field_autocomplete(i, current, weapons, "None")
 
 # =========================================================
-# !nuke  — works in server AND DMs, owner only
+# !nuke — works anywhere, owner only
+# Blocks ALL responses (prefix + slash) for non-owners
 # =========================================================
 @bot.command()
 async def nuke(ctx):
     global SLEEP_MODE
     if ctx.author.name.lower() != OWNER:
-        return                          # silently ignore non-owners
+        return
     if SLEEP_MODE:
         await ctx.send("☠️ Already in sleep mode.")
         return
@@ -271,12 +352,12 @@ async def nuke(ctx):
     )
     await ctx.send(
         "☠️ **Sleep mode activated.**\n"
-        "Everyone gets a quiet Den Den Mushi brush-off.\n"
-        "Use `!restore` to bring it back."
+        "The bot will brush off everyone with a quiet Den Den Mushi message.\n"
+        "Use `!restore` to wake it back up."
     )
 
 # =========================================================
-# !restore — works in server AND DMs, owner only
+# !restore — works anywhere, owner only
 # =========================================================
 @bot.command()
 async def restore(ctx):
@@ -291,34 +372,29 @@ async def restore(ctx):
     await ctx.send("📡 **Systems restored.** The Den Den Mushi is back online — bweh!")
 
 # =========================================================
-# MESSAGE GATE
+# MESSAGE GATE  (prefix commands)
+# Owner always goes through. Everyone else blocked in sleep.
 # =========================================================
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
-    # Owner always passes through — nuke/restore must always work
     if message.author.name.lower() == OWNER:
         await bot.process_commands(message)
         return
-    # Everyone else is silently blocked during sleep
     if SLEEP_MODE:
+        # Only send a message if they actually tried a bot command
+        # (starts with prefix). Silent for normal chat.
+        if message.content.startswith("!"):
+            await message.channel.send(r("sleeping"))
         return
     await bot.process_commands(message)
 
-@bot.check
-async def prefix_sleep_check(ctx):
-    if ctx.command and ctx.command.name in ("nuke", "restore"):
-        return True
-    if ctx.author.name.lower() == OWNER:
-        return True
-    if SLEEP_MODE:
-        await ctx.send(r("sleeping"))
-        return False
-    return True
-
+# =========================================================
+# SLASH GATE  (interaction_check fires before every slash cmd)
+# =========================================================
 @tree.interaction_check
-async def slash_sleep_check(interaction: discord.Interaction):
+async def slash_sleep_check(interaction: discord.Interaction) -> bool:
     if interaction.user.name.lower() == OWNER:
         return True
     if SLEEP_MODE:
@@ -344,7 +420,7 @@ async def _admin_set(
     if not member:
         await interaction.response.send_message(r("not_found"), ephemeral=True)
         return
-    store[uid(member)] = value          # keyed by stable member ID
+    store[uid(member)] = value
     save_data()
     await interaction.response.send_message(
         f"{emoji} {r('field_set')} — **{label}** updated for **{member.display_name}**."
@@ -387,35 +463,38 @@ async def stats(ctx, *, username):
 @tree.command(name="stats", description="Check pirate stats")
 @app_commands.autocomplete(username=username_autocomplete)
 async def slash_stats(interaction: discord.Interaction, username: str):
-    member = find_member(interaction.guild, username)
-    if not member:
-        await interaction.response.send_message(r("not_found"), ephemeral=True)
-        return
-    await interaction.response.send_message(
-        content=f"{r('bounty_found')}\n\n{format_stats(member)}",
-        file=poster_file(member)
-    )
+    async def _run():
+        member = find_member(interaction.guild, username)
+        if not member:
+            await interaction.response.send_message(r("not_found"), ephemeral=True)
+            return
+        await interaction.response.send_message(
+            content=f"{r('bounty_found')}\n\n{format_stats(member)}",
+            file=poster_file(member)
+        )
+    await safe_reply(interaction, _run())
 
 # =========================================================
 # POSTER
 # =========================================================
 @tree.command(name="poster", description="Update bounty poster")
 @app_commands.autocomplete(username=username_autocomplete)
-async def slash_poster(
-    interaction: discord.Interaction,
-    username: str,
-    picture: discord.Attachment,
-):
-    if not is_authorized(interaction.user):
-        await interaction.response.send_message(r("not_allowed"), ephemeral=True)
-        return
-    ext = picture.filename.rsplit(".", 1)[-1].lower()
-    if ext not in ("png", "jpg", "jpeg", "webp"):
-        await interaction.response.send_message(r("bad_format"), ephemeral=True)
-        return
-    os.makedirs(POSTER_FOLDER, exist_ok=True)
-    await picture.save(os.path.join(POSTER_FOLDER, f"{normalize(username)}.{ext}"))
-    await interaction.response.send_message(r("poster_updated"))
+async def slash_poster(interaction: discord.Interaction, username: str, picture: discord.Attachment):
+    async def _run():
+        if not is_authorized(interaction.user):
+            await interaction.response.send_message(r("not_allowed"), ephemeral=True)
+            return
+        ext = picture.filename.rsplit(".", 1)[-1].lower()
+        if ext not in ("png", "jpg", "jpeg", "webp"):
+            await interaction.response.send_message(r("bad_format"), ephemeral=True)
+            return
+        os.makedirs(POSTER_FOLDER, exist_ok=True)
+        # Save using member ID so filename is always clean
+        member = find_member(interaction.guild, username)
+        fname  = uid(member) if member else re.sub(r"[^a-z0-9_.-]", "", username.lower())
+        await picture.save(os.path.join(POSTER_FOLDER, f"{fname}.{ext}"))
+        await interaction.response.send_message(r("poster_updated"))
+    await safe_reply(interaction, _run())
 
 # =========================================================
 # TITLE
@@ -423,12 +502,82 @@ async def slash_poster(
 @tree.command(name="settitle", description="Set pirate title")
 @app_commands.autocomplete(username=username_autocomplete, title=title_autocomplete)
 async def set_title(interaction: discord.Interaction, username: str, title: str):
-    await _admin_set(interaction, username, title, titles, "Title", "🎖️")
+    await safe_reply(interaction, _admin_set(interaction, username, title, titles, "Title", "🎖️"))
 
 @tree.command(name="resettitle", description="Reset pirate title")
 @app_commands.autocomplete(username=username_autocomplete)
 async def reset_title(interaction: discord.Interaction, username: str):
-    await _admin_reset(interaction, username, titles, "Title", "Unknown")
+    await safe_reply(interaction, _admin_reset(interaction, username, titles, "Title", "Unknown"))
+
+async def title_option_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    """Autocomplete for /removetitle and /picktitle — shows the current pick-list."""
+    q = current.lower()
+    return [
+        app_commands.Choice(name=t, value=t)
+        for t in title_options
+        if q in t.lower()
+    ][:25]
+
+@tree.command(name="addtitle", description="Add a title to the pick-list (officers only)")
+async def add_title_option(interaction: discord.Interaction, title: str):
+    async def _run():
+        if not is_authorized(interaction.user):
+            await interaction.response.send_message(r("not_allowed"), ephemeral=True)
+            return
+        tl = title.strip()
+        if not tl:
+            await interaction.response.send_message("❌ Title can't be empty — bweh.", ephemeral=True)
+            return
+        if tl in title_options:
+            await interaction.response.send_message(
+                f"🐌 **{tl}** is already on the board.", ephemeral=True
+            )
+            return
+        title_options.append(tl)
+        save_data()
+        await interaction.response.send_message(
+            f"{r('title_added')}\n📋 **{tl}** is now available for pirates to claim."
+        )
+    await safe_reply(interaction, _run())
+
+@tree.command(name="removetitle", description="Remove a title from the pick-list (officers only)")
+@app_commands.autocomplete(title=title_option_autocomplete)
+async def remove_title_option(interaction: discord.Interaction, title: str):
+    async def _run():
+        if not is_authorized(interaction.user):
+            await interaction.response.send_message(r("not_allowed"), ephemeral=True)
+            return
+        if title not in title_options:
+            await interaction.response.send_message(r("not_found"), ephemeral=True)
+            return
+        title_options.remove(title)
+        save_data()
+        await interaction.response.send_message(
+            f"{r('title_removed')}\n📋 **{title}** removed from the board."
+        )
+    await safe_reply(interaction, _run())
+
+@tree.command(name="picktitle", description="Pick your title from the list")
+@app_commands.autocomplete(title=title_option_autocomplete)
+async def pick_title(interaction: discord.Interaction, title: str):
+    async def _run():
+        if not title_options:
+            await interaction.response.send_message(r("title_list_empty"), ephemeral=True)
+            return
+        if title not in title_options:
+            await interaction.response.send_message(
+                f"❌ That title isn't on the board. Use `/picktitle` and pick from the list — bweh.",
+                ephemeral=True
+            )
+            return
+        titles[uid(interaction.user)] = title
+        save_data()
+        await interaction.response.send_message(
+            f"{r('title_picked')}\n🎖️ **{interaction.user.display_name}** is now known as **{title}**."
+        )
+    await safe_reply(interaction, _run())
 
 # =========================================================
 # ABILITY
@@ -436,12 +585,12 @@ async def reset_title(interaction: discord.Interaction, username: str):
 @tree.command(name="setability", description="Set pirate abilities")
 @app_commands.autocomplete(username=username_autocomplete, ability=ability_autocomplete)
 async def set_ability(interaction: discord.Interaction, username: str, ability: str):
-    await _admin_set(interaction, username, ability, abilities, "Abilities", "🌀")
+    await safe_reply(interaction, _admin_set(interaction, username, ability, abilities, "Abilities", "🌀"))
 
 @tree.command(name="resetability", description="Reset pirate abilities")
 @app_commands.autocomplete(username=username_autocomplete)
 async def reset_ability(interaction: discord.Interaction, username: str):
-    await _admin_reset(interaction, username, abilities, "Abilities", "None")
+    await safe_reply(interaction, _admin_reset(interaction, username, abilities, "Abilities", "None"))
 
 # =========================================================
 # WEAPON
@@ -449,26 +598,26 @@ async def reset_ability(interaction: discord.Interaction, username: str):
 @tree.command(name="setweapon", description="Set pirate weapon")
 @app_commands.autocomplete(username=username_autocomplete, weapon=weapon_autocomplete)
 async def set_weapon(interaction: discord.Interaction, username: str, weapon: str):
-    await _admin_set(interaction, username, weapon, weapons, "Weapon", "🗡️")
+    await safe_reply(interaction, _admin_set(interaction, username, weapon, weapons, "Weapon", "🗡️"))
 
 @tree.command(name="resetweapon", description="Reset pirate weapon")
 @app_commands.autocomplete(username=username_autocomplete)
 async def reset_weapon(interaction: discord.Interaction, username: str):
-    await _admin_reset(interaction, username, weapons, "Weapon", "None")
+    await safe_reply(interaction, _admin_reset(interaction, username, weapons, "Weapon", "None"))
 
 # =========================================================
 # DELIVERY ROUTE
 # =========================================================
 @tree.command(name="setdeliveryroute", description="Set episode delivery channel")
 async def set_route(interaction: discord.Interaction, channel: discord.TextChannel):
-    if not is_authorized(interaction.user):
-        await interaction.response.send_message(r("not_allowed"), ephemeral=True)
-        return
-    global delivery_channel_id
-    delivery_channel_id = channel.id
-    await interaction.response.send_message(
-        f"{r('ep_set')} — Now routing to {channel.mention}"
-    )
+    async def _run():
+        if not is_authorized(interaction.user):
+            await interaction.response.send_message(r("not_allowed"), ephemeral=True)
+            return
+        global delivery_channel_id
+        delivery_channel_id = channel.id
+        await interaction.response.send_message(f"{r('ep_set')} — Now routing to {channel.mention}")
+    await safe_reply(interaction, _run())
 
 # =========================================================
 # READY
@@ -478,8 +627,12 @@ async def on_ready():
     load_data()
     await tree.sync()
     print(f"Den Den Mushi connected as {bot.user} — bweh!")
+    print(f"Guilds: {[g.name for g in bot.guilds]}")
+    for g in bot.guilds:
+        print(f"  {g.name}: {g.member_count} members, cache: {len(g.members)}")
 
 # =========================================================
 # RUN
 # =========================================================
+keep_alive()
 bot.run(TOKEN)
