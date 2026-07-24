@@ -634,5 +634,8 @@ async def on_ready():
 # =========================================================
 # RUN
 # =========================================================
+print("About to start Discord bot...")
+print(f"TOKEN exists: {TOKEN is not None}")
+
 keep_alive()
 bot.run(TOKEN)
