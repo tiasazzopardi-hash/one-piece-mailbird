@@ -634,6 +634,7 @@ async def on_ready():
 # =========================================================
 # RUN
 # =========================================================
+print("DISCORD_TOKEN in env:", "DISCORD_TOKEN" in os.environ)
 print("About to start Discord bot...")
 print(f"TOKEN exists: {TOKEN is not None}")
 
