@@ -26,6 +26,10 @@ def keep_alive():
 # =========================================================
 # CONFIG
 # =========================================================
+from dotenv import load_dotenv
+
+load_dotenv()
+
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 POSTER_FOLDER = "bounty_posters"
